@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Nova</title>
+<style>
+:root{--bg:#05080f;--panel:#0b1220;--fg:#d8f3ff;--mut:#7fa3b8;--acc:#27d3ff;--line:#17324a;color-scheme:dark;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}html,body{height:100%;margin:0}
+body{background:radial-gradient(circle at 50% 30%,#0a1c30,var(--bg));color:var(--fg);font:15px system-ui,Segoe UI,Arial,sans-serif;display:flex;flex-direction:column}
+header{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--line)}
+header b{letter-spacing:4px;color:var(--acc)}header span{color:var(--mut);font-size:12px;flex:1}
+select,button,input{background:var(--panel);color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:inherit}
+button{cursor:pointer}button:hover,button.on{border-color:var(--acc);color:var(--acc)}
+main{flex:1;display:flex;flex-wrap:wrap;min-height:0}
+#stage{flex:1 1 320px;min-height:320px;position:relative;overflow:hidden}
+#cv{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
+#lbl{position:absolute;left:12px;top:10px;color:var(--mut);font-size:12px}
+#chat{flex:1 1 320px;display:flex;flex-direction:column;min-height:0;border-left:1px solid var(--line)}
+#log{flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:8px}
+.m{max-width:90%;padding:8px 12px;border-radius:12px;background:var(--panel);border:1px solid var(--line);white-space:pre-wrap}
+.m.u{align-self:flex-end;border-color:var(--acc)}
+#bar{display:flex;gap:6px;padding:10px;flex-wrap:wrap}#bar input{flex:1;min-width:140px}
+#orb{position:fixed;right:14px;bottom:calc(14px + env(safe-area-inset-bottom,0px));width:54px;height:54px;border-radius:50%;border:2px solid var(--acc);background:radial-gradient(circle,#27d3ff 0,#064 0,#06324a 70%);box-shadow:0 0 18px var(--acc);z-index:9;padding:0;color:#fff;font-weight:700}
+#orb.hear{animation:p 1s infinite}@keyframes p{50%{box-shadow:0 0 34px var(--acc);transform:scale(1.1)}}
+#vid{position:fixed;left:10px;bottom:10px;width:120px;border-radius:8px;border:1px solid var(--acc);display:none;transform:scaleX(-1)}
+</style></head><body>
+<header><b>NOVA</b><span id="st">say “Nova” after tapping Start</span>
+<select id="lang"></select><button id="go">Start listening</button></header>
+<main>
+<div id="stage"><canvas id="cv"></canvas><div id="lbl"></div></div>
+<div id="chat"><div id="log"></div>
+<div id="bar"><input id="in" placeholder="Type or say: Nova, call Mom…"><button id="send">Send</button>
+<button id="cam">Hand gestures</button><button id="nxt">Next 3D</button></div></div>
+</main>
+<button id="orb" title="Nova">N</button><video id="vid" muted playsinline></video>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+const $=id=>document.getElementById(id);
+const LANGS={"English (India)":"en-IN","English (US)":"en-US","हिन्दी":"hi-IN","मराठी":"mr-IN","Español":"es-ES","Français":"fr-FR","Deutsch":"de-DE","中文":"zh-CN","日本語":"ja-JP","العربية":"ar-SA","Русский":"ru-RU","Português":"pt-BR"};
+for(const k in LANGS)$("lang").add(new Option(k,LANGS[k]));
+const store={get(k,d){try{return JSON.parse(localStorage.getItem(k))??d}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
+$("lang").value=store.get("lang","en-IN");$("lang").onchange=()=>{store.set("lang",$("lang").value);if(rec){rec.lang=$("lang").value}};
+let contacts=store.get("contacts",{}),history=[],awakeUntil=0,sample=null,speaking=false;
+
+function add(t,u){const d=document.createElement("div");d.className="m"+(u?" u":"");d.textContent=t;$("log").append(d);$("log").scrollTop=1e9}
+function say(t){add(t);try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(t.slice(0,400));u.lang=$("lang").value;
+ const v=speechSynthesis.getVoices().find(v=>v.lang.startsWith($("lang").value.slice(0,2)));if(v)u.voice=v;
+ u.onstart=()=>speaking=true;u.onend=()=>speaking=false;speechSynthesis.speak(u)}catch(e){}}
+
+/* ---------- 3D teaching models ---------- */
+const cv=$("cv"),R=new THREE.WebGLRenderer({canvas:cv,antialias:true,alpha:true}),S=new THREE.Scene(),C=new THREE.PerspectiveCamera(50,1,.1,100);
+C.position.set(0,2,9);S.add(new THREE.AmbientLight(0xffffff,.5));const L=new THREE.PointLight(0xffffff,1.2);L.position.set(5,6,8);S.add(L);
+let cur=new THREE.Group();S.add(cur);let mi=0,zoom=9;
+const mat=(c,w)=>new THREE.MeshStandardMaterial({color:c,wireframe:!!w,metalness:.3,roughness:.4});
+const ball=(r,c)=>new THREE.Mesh(new THREE.SphereGeometry(r,24,24),mat(c));
+const MODELS={
+ "Solar system":()=>{const g=new THREE.Group(),s=ball(1.2,0xffc933);s.material=new THREE.MeshBasicMaterial({color:0xffc933});g.add(s);
+  [[2.2,.25,0x9aa],[3.2,.35,0xe9b],[4.4,.4,0x39f],[5.6,.3,0xd54],[7,.7,0xdb8]].forEach(([d,r,c],i)=>{const o=new THREE.Group(),p=ball(r,c);p.position.x=d;o.add(p);o.userData.sp=.02/(i+1);g.add(o);
+   const ring=new THREE.Mesh(new THREE.RingGeometry(d-.01,d+.01,64),new THREE.MeshBasicMaterial({color:0x334455,side:2}));ring.rotation.x=Math.PI/2;g.add(ring)});return g},
+ "Atom":()=>{const g=new THREE.Group();g.add(ball(.7,0xff5566));for(let i=0;i<3;i++){const o=new THREE.Group(),r=new THREE.Mesh(new THREE.TorusGeometry(3,.02,8,80),mat(0x27d3ff));o.add(r);const e=ball(.2,0x66ff99);e.position.x=3;o.add(e);o.rotation.set(i*1.05,i*.6,0);o.userData.sp=.04+i*.01;g.add(o)}return g},
+ "DNA helix":()=>{const g=new THREE.Group();for(let i=0;i<40;i++){const a=i*.45,y=(i-20)*.28,x=Math.cos(a)*1.5,z=Math.sin(a)*1.5,p=ball(.2,0x27d3ff),q=ball(.2,0xff6b9a);p.position.set(x,y,z);q.position.set(-x,y,-z);const b=new THREE.Mesh(new THREE.CylinderGeometry(.04,.04,3,6),mat(0xcccccc));b.position.y=y;b.rotation.z=Math.PI/2;b.rotation.y=-a;g.add(p,q,b)}g.userData.spin=.01;return g},
+ "Cube (geometry)":()=>{const g=new THREE.Group();g.add(new THREE.Mesh(new THREE.BoxGeometry(3,3,3),mat(0x27d3ff,1)),new THREE.Mesh(new THREE.BoxGeometry(1.5,1.5,1.5),mat(0xff6b9a)));g.userData.spin=.01;return g}
+};
+const names=Object.keys(MODELS);
+function show(n){const i=names.findIndex(x=>x.toLowerCase().includes(n.toLowerCase()));if(i<0)return false;mi=i;S.remove(cur);cur=MODELS[names[i]]();S.add(cur);$("lbl").textContent="3D: "+names[i];return true}
+show("solar");
+function resize(){const r=cv.parentElement.getBoundingClientRect();R.setSize(r.width,r.height,false);C.aspect=r.width/r.height;C.updateProjectionMatrix()}
+addEventListener("resize",resize);resize();try{new ResizeObserver(resize).observe(cv.parentElement)}catch(e){}setTimeout(resize,300);
+(function loop(){requestAnimationFrame(loop);cur.rotation.y+=cur.userData.spin??.004;cur.children.forEach(o=>{if(o.userData.sp)o.rotation[names[mi]=="Atom"?"y":"y"]+=o.userData.sp});
+ C.position.z+=(zoom-C.position.z)*.1;C.lookAt(0,0,0);R.render(S,C)})();
+$("nxt").onclick=()=>{show(names[(mi+1)%names.length])};
+cv.onpointermove=e=>{if(e.buttons){cur.rotation.y+=e.movementX*.01;cur.rotation.x+=e.movementY*.01}};
+function label(t){const c=document.createElement("canvas");c.width=256;c.height=64;const x=c.getContext("2d");x.font="bold 28px sans-serif";x.fillStyle="#bff";x.textAlign="center";x.fillText(String(t).slice(0,18),128,40);const s=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(c),transparent:true}));s.scale.set(3,.75,1);return s}
+const GEO={sphere:s=>new THREE.SphereGeometry(s[0]||1,20,20),box:s=>new THREE.BoxGeometry(s[0]||1,s[1]||s[0]||1,s[2]||s[0]||1),cylinder:s=>new THREE.CylinderGeometry(s[0]||.5,s[0]||.5,s[1]||2,20),cone:s=>new THREE.ConeGeometry(s[0]||.7,s[1]||2,20),torus:s=>new THREE.TorusGeometry(s[0]||1.5,s[1]||.15,10,48),ring:s=>new THREE.TorusGeometry(s[0]||1.5,.03,6,64)};
+function build(spec){const g=new THREE.Group();(spec.parts||[]).slice(0,40).forEach(p=>{const geo=(GEO[p.shape]||GEO.sphere)(p.size||[]),col=new THREE.Color(p.color||"#27d3ff"),pv=new THREE.Group(),m=new THREE.Mesh(geo,new THREE.MeshBasicMaterial({color:col,transparent:true,opacity:.3})),w=new THREE.Mesh(geo,new THREE.MeshBasicMaterial({color:col,wireframe:true,transparent:true,opacity:.8}));m.add(w);const pos=p.pos||[0,0,0];
+ if(p.orbit){m.position.set(pos[0]||0,pos[1]||0,pos[2]||0);pv.userData.sp=p.orbit}else{pv.position.set(pos[0]||0,pos[1]||0,pos[2]||0);pv.userData.sp=p.spin||0}
+ pv.add(m);if(p.label){const l=label(p.label);l.position.copy(m.position);l.position.y+=1.2;pv.add(l)}g.add(pv)});
+ const base=new THREE.Mesh(new THREE.RingGeometry(3.5,3.6,64),new THREE.MeshBasicMaterial({color:0x27d3ff,side:2}));base.rotation.x=-Math.PI/2;base.position.y=-4;g.add(base);g.userData.spin=.004;return g}
+async function holo(topic){if(!sample)return say("I need my AI brain to build custom holograms. Open the claude.ai link.");say("Building a hologram of "+topic+"…");
+ try{const r=await sample(`Return ONLY JSON (no markdown) describing a simple 3D educational model of "${topic}" built from primitives, scene within about -5..5 units. Schema: {"title":str,"explanation":"2-3 spoken sentences in language ${$("lang").value}","parts":[{"shape":"sphere|box|cylinder|cone|torus|ring","pos":[x,y,z],"size":[numbers],"color":"#hex","label":"short","orbit":optional radians per frame like 0.02,"spin":optional}]}. Use 8-25 parts and label the key parts.`,{cache:false});
+  const t=r.text,j=JSON.parse(t.slice(t.indexOf("{"),t.lastIndexOf("}")+1));S.remove(cur);cur=build(j);S.add(cur);$("lbl").textContent="Hologram: "+(j.title||topic);say(j.explanation||("Here is "+topic))}catch(e){say("I couldn't build that model. Try a simpler topic.")}}
+
+/* ---------- Commands ---------- */
+async function handle(text){
+ const t=text.trim();if(!t)return;add(t,true);const l=t.toLowerCase();let m;
+ if(m=l.match(/^(?:save|add) contact (.+?) (?:as|number|is)?\s*(\+?[\d ]{6,})$/)){contacts[m[1]]=m[2].replace(/ /g,"");store.set("contacts",contacts);return say("Saved "+m[1]+".")}
+ if(m=l.match(/^(call|phone|dial|message|text|whatsapp)\s+(.+)$/)){
+  const who=m[2].trim(),num=(who.match(/^\+?[\d ]{6,}$/)?who.replace(/ /g,""):contacts[who]);
+  if(!num)return say("I don't have a number for "+who+". Say: save contact "+who+" 9876543210");
+  const sms=/message|text/.test(m[1]),wa=m[1]=="whatsapp";say((sms||wa?"Opening message to ":"Calling ")+who+"…");
+  location.href=wa?"https://wa.me/"+num.replace(/\D/g,""):(sms?"sms:":"tel:")+num;return}
+ if(m=l.match(/^(?:open|go to)\s+(\S+)$/)){say("Opening "+m[1]);window.open("https://"+m[1].replace(/\.?$/,"")+(m[1].includes(".")?"":".com"),"_blank");return}
+ if(m=l.match(/^(?:show|explain)\s+(?:me\s+)?(?:the\s+)?(?:3d\s+)?(solar|atom|dna|cube)/)){show(m[1]);return say("Here is the "+names[mi]+" in 3D. Swipe your hand or tap Next 3D to switch.")}
+ if(/3d|hologram|model|visuali/.test(l)&&!/^(next|change) model/.test(l)){const tp=l.replace(/^(please\s+)?(show|explain|build|make|create|visuali[sz]e|give|draw)\s+(me\s+)?(a\s+|an\s+|the\s+)?/,"").replace(/\b(in\s+|as\s+)?(a\s+)?(3d|hologram)\b(\s+model)?(\s+of)?/g,"").replace(/\bmodel of\b/,"").trim();return holo(tp||t)}
+ if(/^(next|change) model/.test(l)){show(names[(mi+1)%names.length]);return say(names[mi])}
+ if(/^zoom in/.test(l)){zoom=Math.max(4,zoom-2);return}if(/^zoom out/.test(l)){zoom=Math.min(16,zoom+2);return}
+ if(/^(what('s| is) the )?time/.test(l))return say(new Date().toLocaleTimeString());
+ if(!sample)return say("My AI brain isn't connected in this view. Open the published link on claude.ai to enable answers. Commands (call, message, open, show 3D) still work.");
+ try{history.push({role:"user",content:t});
+  const ctx="You are Nova, a concise, friendly voice assistant like JARVIS. Reply in the same language the user used. Max 3 short sentences unless asked for detail. Plain text only, no markdown.\n\nConversation:\n"+history.slice(-8).map(h=>h.role+": "+h.content).join("\n")+"\n\nNova:";
+  const r=await sample(ctx,{cache:false});history.push({role:"assistant",content:r.text});say(r.text)}
+ catch(e){say(e.code=="not_granted"?"Please allow Nova to use Claude when asked.":"Sorry, I couldn't reach my brain: "+(e.message||e.code))}
+}
+$("send").onclick=()=>{const v=$("in").value;$("in").value="";handle(v)};$("in").onkeydown=e=>{if(e.key=="Enter")$("send").click()};
+
+/* ---------- Wake word "Nova" ---------- */
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;let rec=null,listening=false;
+function startRec(){
+ if(!SR){$("st").textContent="Voice not supported here — use Chrome or Edge";return}
+ rec=new SR();rec.continuous=true;rec.interimResults=true;rec.lang=$("lang").value;let done=0;
+ rec.onresult=e=>{for(let i=e.resultIndex;i<e.results.length;i++){const r=e.results[i],tx=r[0].transcript.trim(),low=tx.toLowerCase();
+   const wake=/\b(nova|nova|nowa|नोवा)\b/.test(low);
+   if(wake&&!r.isFinal&&Date.now()>awakeUntil){awakeUntil=Date.now()+9000;$("orb").classList.add("hear");$("st").textContent="Nova is listening…";try{speechSynthesis.cancel()}catch(x){}}
+   if(r.isFinal){const rest=tx.replace(/^.*?\b(nova|nova|nowa|नोवा)\b[ ,.:!]*/i,"");
+    if(wake){awakeUntil=0;$("orb").classList.remove("hear");$("st").textContent="Listening for “Nova”";rest?handle(rest):(awakeUntil=Date.now()+9000,$("orb").classList.add("hear"),say("Yes?"))}
+    else if(Date.now()<awakeUntil){awakeUntil=0;$("orb").classList.remove("hear");$("st").textContent="Listening for “Nova”";handle(tx)}}}};
+ rec.onend=()=>{if(listening)setTimeout(()=>{try{rec.start()}catch(e){}},300)};
+ rec.onerror=e=>{if(e.error=="not-allowed"){listening=false;$("st").textContent="Microphone blocked — allow it in the browser"}};
+ try{rec.start()}catch(e){}
+}
+function toggle(){listening=!listening;if(listening){startRec();$("go").textContent="Stop listening";$("go").classList.add("on");$("st").textContent="Listening for “Nova”"}else{try{rec.stop()}catch(e){}$("go").textContent="Start listening";$("go").classList.remove("on");$("st").textContent="Stopped";$("orb").classList.remove("hear")}}
+$("go").onclick=toggle;$("orb").onclick=()=>{if(!listening)toggle();awakeUntil=Date.now()+9000;$("orb").classList.add("hear");say("Yes?")};
+
+/* ---------- Hand-motion gestures (camera, runs on your device) ---------- */
+let camOn=false,stream=null,prev=null,trail=[],lastG=0;const cc=document.createElement("canvas");cc.width=64;cc.height=48;const cx=cc.getContext("2d",{willReadFrequently:true});
+$("cam").onclick=async()=>{
+ if(camOn){camOn=false;stream&&stream.getTracks().forEach(t=>t.stop());$("vid").style.display="none";$("cam").classList.remove("on");return}
+ try{stream=await navigator.mediaDevices.getUserMedia({video:{width:320,height:240}});$("vid").srcObject=stream;await $("vid").play();$("vid").style.display="block";camOn=true;$("cam").classList.add("on");say("Gestures on. Swipe left or right for the next model; move your hand up or down to zoom.");tick()}
+ catch(e){say("I couldn't open the camera.")}};
+function tick(){if(!camOn)return;cx.drawImage($("vid"),0,0,64,48);const d=cx.getImageData(0,0,64,48).data;
+ if(prev){let sx=0,sy=0,n=0;for(let i=0;i<d.length;i+=4){const df=Math.abs(d[i]-prev[i])+Math.abs(d[i+1]-prev[i+1]);if(df>70){const p=i/4;sx+=63-(p%64);sy+=Math.floor(p/64);n++}}
+  const now=performance.now();if(n>60){trail.push([now,sx/n,sy/n])}trail=trail.filter(p=>now-p[0]<450);
+  if(trail.length>4&&now-lastG>900){const a=trail[0],b=trail[trail.length-1],dx=b[1]-a[1],dy=b[2]-a[2];
+   if(Math.abs(dx)>22&&Math.abs(dx)>Math.abs(dy)){lastG=now;trail=[];show(names[(mi+(dx>0?1:names.length-1))%names.length]);}
+   else if(Math.abs(dy)>16){lastG=now;trail=[];zoom=dy>0?Math.min(16,zoom+2):Math.max(4,zoom-2)}}}
+ prev=Uint8ClampedArray.from(d);setTimeout(tick,60)}
+
+/* ---------- Connect AI brain (when running as a published artifact) ---------- */
+(async()=>{try{sample=await claude.use("sample")}catch(e){}if(sample)add("Nova online. Tap Start listening, then say “Nova, …”. Try: “Nova, show solar system” or “Nova, who built the pyramids?”");else add("Nova online (offline mode). Commands work; open the claude.ai link for AI answers.")})();
+try{speechSynthesis.getVoices()}catch(e){}
+</script></body></html>
